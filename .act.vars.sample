@@ -1,0 +1,4 @@
+# Sample non-secret vars for act.
+# Copy to .act.vars and tweak as needed.
+# Example:
+# FOO=bar

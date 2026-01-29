@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: SemVer tag to release (e.g., v1.2.3)
+        required: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run package
+      - run: git diff --exit-code
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists"
+          else
+            gh release create "$TAG" --generate-notes
+          fi
+      - name: Update floating tags
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          if [[ "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            MAJOR="v${BASH_REMATCH[1]}"
+            MINOR="v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+            git tag -f "$MAJOR" "$TAG"
+            git tag -f "$MINOR" "$TAG"
+            git push -f origin "$MAJOR" "$MINOR"
+          else
+            echo "Tag $TAG does not match vX.Y.Z; skipping floating tags."
+          fi
+      - name: Job summary
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          {
+            echo "## Release"
+            echo ""
+            echo "- Tag: $TAG"
+            echo "- Commit: $GITHUB_SHA"
+          } >> "$GITHUB_STEP_SUMMARY"

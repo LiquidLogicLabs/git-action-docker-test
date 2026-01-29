@@ -1,0 +1,6 @@
+{
+  "_comment": "Simulated workflow_call payload for local act testing.",
+  "inputs": {
+    "tag": "v0.1.0"
+  }
+}

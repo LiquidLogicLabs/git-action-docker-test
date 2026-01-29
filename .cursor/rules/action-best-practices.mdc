@@ -1,0 +1,779 @@
+---
+alwaysApply: true
+---
+
+# GitHub Actions Best Practices (Node.js + Composite)
+
+Use this as an action-agnostic playbook for building, testing, documenting, and releasing GitHub Actions.
+
+This guidance is written for GitHub Actions, but most patterns also apply to compatible runners/forges (with small differences in APIs, permissions, and tokens).
+
+## 1) Scope and Principles
+
+- Prefer boring, predictable designs over clever ones.
+- Make actions idempotent when possible (safe to re-run).
+- Keep runtime dependencies minimal.
+- Fail fast with clear error messages.
+- Treat logs as a user interface: helpful, structured, and safe (no secrets).
+
+## 2) Choose the Right Action Type
+
+### Node.js (JavaScript/TypeScript) action
+
+Use when you need:
+
+- Complex logic, HTTP calls, JSON parsing
+- Cross-platform behavior (Linux/Windows/macOS)
+- Rich unit testing
+
+### Composite (shell-based) action
+
+Use when you need:
+
+- A small wrapper around existing CLIs
+- Simple orchestration of a few steps
+- Minimal packaging overhead
+
+Avoid composite actions for complex parsing/logic that becomes hard to test and maintain.
+
+## 3) Repository Layout
+
+### Minimal (Node.js action)
+
+- `action.yml`
+- `src/` (TypeScript source)
+- `dist/` (bundled JavaScript output, committed)
+- `package.json`
+- `tsconfig.json`
+- `README.md`
+- `LICENSE` (recommended)
+
+Optional but recommended:
+
+- `eslint.config.mjs` (or `.eslintrc.json` for legacy)
+- `jest.config.*`
+- `.github/workflows/` (CI/release)
+- `.devcontainer/`
+- `.husky/` (pre-commit checks)
+
+### Minimal (composite action)
+
+- `action.yml`
+- `README.md`
+- scripts referenced by the action (e.g. `install.sh`)
+
+## 4) `action.yml` Best Practices
+
+### 4.1 Inputs
+
+- Use `camelCase` for input names (org standard).
+- Provide examples in descriptions when the input format is non-trivial.
+- Prefer explicit defaults for optional inputs.
+- Consider forward-compatibility: once published, changing input names is a breaking change.
+
+Common input conventions (recommended):
+
+- `token`: optional override; default should come from the workflow (`${{ github.token }}` / `secrets.GITHUB_TOKEN`) when applicable.
+- `platform` / `provider`: when supporting multiple forges, allow explicit override in addition to auto-detection.
+- `dryRun`: for destructive actions, support a dry-run mode.
+- `verbose`: for extra logs.
+- Repository targeting: prefer a single `repository` in `owner/repo` form; optionally allow `owner` + `repo` inputs for convenience.
+
+List inputs:
+
+- If an input accepts multiple values, clearly document the format.
+- Prefer accepting comma-separated lists and trimming whitespace; ignore empty entries.
+- If you support globs/regex, use explicit flags like `useRegex`/`expandPackages` and document examples.
+
+Boolean inputs:
+
+- For JS actions, prefer `core.getBooleanInput('name')`.
+- For composite actions, treat booleans as strings (`'true'/'false'`) and document that clearly.
+
+### 4.2 Outputs
+
+- Use `camelCase` for output names (match inputs; org standard).
+- Output names should be stable and documented.
+- Outputs should be machine-friendly (JSON or simple scalars).
+- If output is complex, consider emitting JSON and providing a minimal scalar for common cases.
+
+### 4.3 Runtime
+
+Node.js actions:
+
+```yaml
+runs:
+  using: node20
+  main: dist/index.js
+```
+
+Composite actions:
+
+```yaml
+runs:
+  using: composite
+  steps:
+    - name: Do something
+      shell: bash
+      run: ${{ github.action_path }}/script.sh
+```
+
+### 4.4 Branding
+
+- Add `branding` for Marketplace friendliness.
+- Pick an icon/color that matches the action intent.
+
+## 5) Implementation Patterns (Node.js)
+
+### 5.1 Entry point
+
+- Provide a single `run()` that:
+  - reads inputs
+  - validates inputs
+  - executes core logic
+  - sets outputs
+  - handles errors once
+
+Example skeleton:
+
+```ts
+import * as core from '@actions/core';
+
+async function run(): Promise<void> {
+  try {
+    const verbose = core.getBooleanInput('verbose');
+    const input = core.getInput('input', { required: true });
+
+    core.debug(`verbose=${verbose}`);
+
+    // ...do work...
+
+    core.setOutput('result', 'ok');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    core.setFailed(message);
+  }
+}
+
+run();
+```
+
+### 5.2 Input validation
+
+- Validate early.
+- Error messages should mention the input name and expected format.
+- If an input is an enum, validate against an allow-list.
+
+### 5.3 Idempotency
+
+- If the action can be safely re-run, document it.
+- Avoid making irreversible changes without a clear opt-in.
+
+### 5.4 Logging
+
+- Use `core.info()` for normal progress.
+- Use `core.warning()` for recoverable issues.
+- Use `core.error()` only for actionable failures.
+- Use `core.debug()` for diagnostic detail.
+
+If you support a `verbose` input, route verbose debug logs through `core.info()` with a clear prefix so users always see them when requested.
+
+#### Optional: centralize logging behind a logger helper
+
+For non-trivial actions (multiple modules, HTTP calls, retries, lots of branching), consider a tiny logger wrapper (class or functions) that standardizes:
+
+- message prefixes and formatting
+- optional `verbose` input behavior
+- consistent grouping (start/end), and context fields
+
+Guidelines:
+
+- Keep it thin: it should call `@actions/core` under the hood.
+- Prefer passing `logger` into modules instead of passing `verbose` booleans everywhere.
+- Still support `core.debug()` so workflow-level debug (`ACTIONS_STEP_DEBUG`) works.
+- If you emit verbose logs via `core.info()`, prefix with something like `[DEBUG]`.
+
+### 5.5 Secret handling
+
+- Mask sensitive values with `core.setSecret(value)`.
+- Never print tokens, private keys, or raw authorization headers.
+- Be careful when logging URLs (they can contain credentials).
+
+### 5.6 Reuse and multi-platform design
+
+Avoid copy/paste across actions. Prefer reuse via:
+
+- A small shared npm package for common logic (parsing, validation, API clients, platform detection).
+- A composite action or reusable workflow for orchestrating multiple steps/actions.
+
+Guidelines:
+
+- Keep shared libraries small, well-tested, and stable; treat them like public APIs.
+- Pin shared dependencies intentionally (use semver ranges thoughtfully; consider pinning to `~` or exact versions if you need maximum reproducibility).
+- Avoid having a Node.js action “call another action” at runtime. If you need composition, do it in the workflow (or in a composite action).
+
+Org-specific (LiquidLogicLabs):
+
+- When you need to support multiple git hosting providers (GitHub/Gitea/Bitbucket), prefer using the shared package `git-platform-detector` instead of re-implementing provider detection in each action.
+- Prefer reusing existing LiquidLogicLabs actions from workflows/composites rather than duplicating their behavior.
+
+Factory/strategy pattern (recommended for multi-platform behavior):
+
+- Define a stable interface (e.g., `PlatformClient` / `Provider`) with a small surface area.
+- Use a factory to select an implementation (`createByName`, `createByUrl`, or `createByEnv`).
+- Keep platform-specific code isolated in per-provider modules; keep shared validation and error handling in one place.
+- Unit test both the factory selection logic and each provider implementation independently.
+
+## 6) Build and Packaging (Node.js)
+
+Goals:
+
+- The action works without `npm install` at runtime.
+- The published artifact is deterministic and reviewed.
+
+Recommended approach:
+
+- TypeScript compile + bundle (e.g., `@vercel/ncc`) into `dist/index.js`.
+- Commit `dist/`.
+- Keep runtime dependencies minimal (ideally only `@actions/core` plus what is truly necessary).
+
+### Recommended npm scripts
+
+Treat `package.json` scripts as the contributor and CI interface. Keep script names consistent across repos.
+
+Baseline (recommended for most Node/TS actions):
+
+```json
+{
+  "scripts": {
+    "build": "tsc && ncc build src/index.ts -o dist --source-map",
+    "package": "npm run build",
+    "lint": "eslint src/**/*.ts --no-warn-ignored",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "clean": "rimraf dist coverage *.tsbuildinfo"
+  }
+}
+```
+
+Notes:
+
+- Only include `rimraf` if you actually need cross-platform `clean`.
+- If you split test suites, add `test:unit`, `test:integration`, and/or `test:e2e` only when those exist.
+- CI should generally run: `npm ci`, `npm run lint`, `npm run typecheck`, `npm test`, `npm run package`.
+
+Optional: versioning and release helper scripts
+
+If you use `standard-version` for changelog + tag creation, expose consistent scripts for bumping major/minor/patch.
+
+Recommended scripts:
+
+```json
+{
+  "scripts": {
+    "version:dry-run": "standard-version --dry-run",
+    "version:patch": "standard-version --release-as patch",
+    "version:minor": "standard-version --release-as minor",
+    "version:major": "standard-version --release-as major",
+    "release:push": "git push --follow-tags origin HEAD",
+    "release:patch": "npm run version:patch && npm run release:push",
+    "release:minor": "npm run version:minor && npm run release:push",
+    "release:major": "npm run version:major && npm run release:push"
+  }
+}
+```
+
+Notes:
+
+- `standard-version` will update `CHANGELOG.md`, bump `package.json`, and create a git tag.
+- The `version:*` scripts do not push; keeping push separate makes it easier to review the diff and abort before publishing.
+- `release:push` uses `--follow-tags` so the newly created tag is pushed with your commit.
+- The combined `release:*` scripts are optional; only add them if your workflow is comfortable doing “bump + tag + push” in one command.
+- Only include these scripts if your repo actually uses `standard-version`.
+
+Optional: running the release workflow locally via `act`
+
+If your repo has a release workflow, provide a script to run it locally. This helps validate workflow wiring (permissions, job dependencies, inputs) before pushing.
+
+```json
+{
+  "scripts": {
+    "test:act:release:tag": "act --container-options \"--user $(id -u):$(id -g)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/release.yml --eventpath .github/workflows/.act/event-release.json",
+    "test:act:release:dispatch": "act --container-options \"--user $(id -u):$(id -g)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/release.yml --eventpath .github/workflows/.act/event-workflow_dispatch.json"
+  }
+}
+```
+
+Tips:
+
+- Keep `.github/workflows/.act/event-release.json` and `.github/workflows/.act/event-workflow_dispatch.json` in the repo (no secrets).
+- For real publishing, still rely on CI; `act` is for local validation.
+
+Example minimal scripts (if you don't use Prettier or Jest): keep the names but adjust implementations.
+
+Example `package.json` scripts:
+
+```json
+{
+  "scripts": {
+    "build": "tsc && ncc build src/index.ts -o dist --source-map",
+    "package": "npm run build",
+    "lint": "eslint src/**/*.ts --no-warn-ignored",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
+  }
+}
+```
+
+## 7) Testing Strategy
+
+### 7.1 Unit tests (recommended)
+
+- Test pure logic without depending on the runner environment.
+- Mock `@actions/core` and any HTTP clients.
+
+### 7.2 Integration tests (when needed)
+
+- Exercise real parsing/IO boundaries.
+- Prefer deterministic fixtures.
+
+### 7.3 E2E tests (best for actions)
+
+- Test the action as users run it: `uses: ./` in a workflow.
+- Validate outputs and side effects.
+- If external tokens/services are required, skip gracefully when not configured.
+
+### 7.4 Local workflow testing with `nektos/act`
+
+If you support local workflow runs, standardize on `act` so contributors can reproduce CI behavior without pushing.
+
+Use `act` for:
+
+- running the same build/test steps CI runs (good for catching workflow issues)
+- running E2E workflows that call the action via `uses: ./`
+
+Note: local development loops are often faster with direct scripts (`npm run lint`, `npm test`, `npm run package`). Use `act` when you want to validate workflow wiring, permissions, job ordering, caching, and action usage.
+
+Important: `act` runs jobs in containers, which commonly run as `root`. If your repo is bind-mounted (typical), this can create root-owned files on the host (e.g., `node_modules/`, `~/.npm`, `~/.cache`) and break local development.
+
+To avoid that, standardize on passing a host UID/GID mapping:
+
+```bash
+act --container-options "--user $(id -u):$(id -g)" -W .github/workflows/ci.yml
+```
+
+Also standardize `act` configuration via repo-local files:
+
+- `.act.env` (non-secret environment defaults)
+- `.act.vars` (workflow vars, usually empty)
+- `.act.secrets` (placeholders only; do not commit real tokens)
+
+Recommended: commit `.act.env/.act.vars/.act.secrets` and also commit `.act.env.sample/.act.vars.sample/.act.secrets.sample`.
+
+Common `.act.env` defaults (fixes common `act` permission issues):
+
+```dotenv
+HOME=/tmp
+NPM_CONFIG_CACHE=/tmp/.npm
+RUNNER_TOOL_CACHE=/tmp/acttoolcache
+RUNNER_TEMP=/tmp
+```
+
+Then keep `package.json` scripts simple and consistent by always referencing the files explicitly:
+
+```bash
+act --container-options "--user $(id -u):$(id -g)" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/ci.yml
+```
+
+Notes:
+
+- This works well on Linux/macOS shells. On Windows, prefer WSL or Git Bash; otherwise substitute explicit numeric IDs.
+- If you already pass `--container-options` for other reasons, append the `--user ...` to the same container options string.
+
+Recommended patterns:
+
+- Commit reusable `event` payload files under `.github/workflows/.act/`.
+- Keep secrets out of the repo; use local files or environment variables.
+
+Common files:
+
+- `.github/workflows/.act/event-workflow_call.json` (for `workflow_call` testing)
+- `.github/workflows/.act/event-workflow_dispatch.json` (for `workflow_dispatch` testing)
+- `.github/workflows/.act/event-push.json` (for `push` testing)
+- `.github/workflows/.act/event-release.json` (for tag/release testing, if applicable)
+
+Sample event payloads (minimal; adjust to match your workflows):
+
+`event-workflow_call.json`:
+
+```json
+{
+  "inputs": {
+    "tag": "v1.2.3"
+  }
+}
+```
+
+`event-workflow_dispatch.json`:
+
+```json
+{
+  "inputs": {
+    "tag": "v1.2.3"
+  }
+}
+```
+
+`event-push.json`:
+
+```json
+{
+  "ref": "refs/heads/main"
+}
+```
+
+`event-release.json` (or tag push simulation):
+
+```json
+{
+  "ref": "refs/tags/v1.2.3"
+}
+```
+
+Recommended scripts (adjust workflow paths/job names as needed):
+
+```json
+{
+  "scripts": {
+    "test:act": "act --container-options \"--user $(id -u):$(id -g)\" -W .github/workflows/ci.yml",
+    "test:act:verbose": "act --container-options \"--user $(id -u):$(id -g)\" -W .github/workflows/ci.yml -v",
+    "test:act:ci:push": "act --container-options \"--user $(id -u):$(id -g)\" -W .github/workflows/ci.yml --eventpath .github/workflows/.act/event-push.json",
+    "test:act:ci:lint": "act --container-options \"--user $(id -u):$(id -g)\" -W .github/workflows/ci.yml -j lint",
+    "test:act:ci:test": "act --container-options \"--user $(id -u):$(id -g)\" -W .github/workflows/ci.yml -j test",
+
+    "test:act:e2e": "act --container-options \"--user $(id -u):$(id -g)\" -W .github/workflows/e2e-tests.yml",
+    "test:act:e2e:dispatch": "act --container-options \"--user $(id -u):$(id -g)\" -W .github/workflows/e2e-tests.yml --eventpath .github/workflows/.act/event-workflow_dispatch.json",
+    "test:act:release": "act --container-options \"--user $(id -u):$(id -g)\" -W .github/workflows/release.yml --eventpath .github/workflows/.act/event-release.json"
+  }
+}
+```
+
+Local vars/env/secrets:
+
+- **Secrets**: use a local `.secrets` file and pass `--secret-file .secrets`.
+- **Env vars**: use `--env-file .env` (or export env vars in your shell).
+- **Non-sensitive config**: prefer repository/org variables in CI; locally, pass them via env/act flags.
+
+Examples:
+
+```bash
+act --container-options "--user $(id -u):$(id -g)" -W .github/workflows/ci.yml --secret-file .secrets --env-file .env
+```
+
+If you use job selection:
+
+```bash
+act --container-options "--user $(id -u):$(id -g)" -W .github/workflows/ci.yml -j lint --secret-file .secrets --env-file .env
+```
+
+Tips:
+
+- If your workflows use `GITHUB_TOKEN`, you may need to provide a token to `act` via secrets.
+- GitHub environment secrets cannot start with `GITHUB_`; for environment-based E2E, use `TEST_GITHUB_TOKEN` (and map to `GITHUB_TOKEN` in workflow env) to keep names consistent.
+- Prefer writing workflows so they can run in forks and locally (skip external-integration tests when secrets are missing).
+
+Optional: standardize a local runner image mapping if needed (some workflows require tools not present in the default image).
+
+## 8) CI Workflow Patterns
+
+### 8.1 Least privilege permissions
+
+Set top-level permissions explicitly. Example:
+
+```yaml
+permissions:
+  contents: read
+```
+
+Only elevate in the specific job/step that needs it.
+
+### 8.2 Typical CI job order
+
+1. Lint
+2. Typecheck
+3. Test
+4. Build/package
+
+### 8.3 Reusable workflows (optional)
+
+If you have multiple entry workflows, centralize test logic in a reusable workflow.
+
+Common org pattern:
+
+- `test.yml` is a reusable workflow (`workflow_call`) for build + unit/integration tests; allow `workflow_dispatch` for easy manual runs.
+- `ci.yml` is the entry workflow for PR/push validation and can call `test.yml` (and/or other reusable workflows) to keep steps consistent.
+- `e2e-tests.yml` runs external integration tests and should be written to skip gracefully when secrets are missing.
+- `release.yml` can compose them via `uses: ./.github/workflows/ci.yml` and `uses: ./.github/workflows/e2e-tests.yml` with `secrets: inherit`.
+
+Notes:
+
+- Secrets do **not** automatically flow into reusable workflows. If the called workflow uses `secrets.*` (e.g., `NPM_REGISTRY_TOKEN` for a private registry), the caller must pass secrets via `secrets: inherit` or by mapping only the required secrets.
+- `env:` from the caller job does **not** get “passed” into a reusable workflow job; use `workflow_call` inputs (`with:`) and/or repository `vars` to pass non-secret configuration.
+- Concurrency + reusable workflows: GitHub can cancel runs with an annotation like “deadlock was detected for concurrency group … between a top level workflow and 'test'” if the caller and callee end up sharing the same concurrency group. For reusable workflows, prefer an explicit group prefix (don’t rely on `github.workflow`), or omit `concurrency` in the callee and let the entry workflow own concurrency.
+
+Example (reusable `test.yml`):
+
+```yaml
+concurrency:
+  group: Test-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+```
+
+### 8.4 Node setup and caching
+
+Recommended:
+
+- Use `actions/setup-node@v4` and enable `cache: npm`.
+- Use `npm ci` in CI (deterministic installs).
+- If you use a private registry, write `.npmrc` in the workflow from a token secret; never commit it.
+
+### 8.5 Concurrency
+
+Use `concurrency` to avoid wasted CI cycles and reduce race conditions:
+
+- For CI/validation: cancel in-progress runs per branch/PR.
+- For release: consider preventing overlapping releases (often `cancel-in-progress: false`).
+
+Recommended patterns:
+
+- CI / validation (cancel superseded runs):
+
+```yaml
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+```
+
+- If the workflow includes `schedule`, consider isolating scheduled runs:
+
+```yaml
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'schedule' && 'schedule' || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+```
+
+- Releases / publishes (do not cancel once started):
+
+```yaml
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+```
+
+- For `workflow_run`-driven publish workflows, key on the upstream SHA:
+
+```yaml
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+```
+
+### 8.6 Skip docs-only changes
+
+To avoid burning CI minutes on documentation-only edits, exclude Markdown-only changes from triggering entry workflows.
+
+Apply this to workflows with `on: push` and/or `on: pull_request` (typically `ci.yml`). Do not apply it to tag-based release workflows.
+
+```yaml
+on:
+  push:
+    branches: ['**']
+    paths-ignore:
+      - '**/*.md'
+  pull_request:
+    branches: ['**']
+    paths-ignore:
+      - '**/*.md'
+```
+
+Note: `paths-ignore` does not apply to `workflow_call`. If you use reusable workflows, the entry workflow must be the one that skips docs-only changes.
+
+### 8.7 Matrix strategy (platforms / versions)
+
+Use a job `strategy.matrix` when you need confidence across environments.
+
+Recommended defaults for Node actions:
+
+- Use an OS matrix when platform behavior matters (path handling, shell quirks, file permissions, git behavior): `ubuntu-latest`, `windows-latest`, `macos-latest`.
+- Use a Node version matrix only when you explicitly support multiple runtimes. Most of our actions run as `node20`, so a Node matrix is usually unnecessary.
+
+Example OS matrix:
+
+```yaml
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test
+```
+
+Guidelines:
+
+- Keep the matrix minimal (don’t multiply OS × Node × extras unless you truly need it).
+- If only a subset is platform-sensitive, run the full matrix on `pull_request` but a reduced set on `push`/`schedule`.
+- If a job has side effects (publishing, tagging), do not run it in a matrix.
+
+## 9) Release & Versioning
+
+### 9.1 Tags
+
+- Use SemVer tags: `vX.Y.Z`.
+- Treat changing inputs/outputs as breaking changes (major bump).
+- Consider prereleases like `v1.2.3-beta.1` for testing.
+
+### 9.2 Release checklist
+
+Before tagging:
+
+- Local: `npm test`, `npm run lint`, `npm run package`
+- CI: green on the commit you will tag
+like when running under 
+### 9.3 Release workflow design
+
+Recommended release workflow properties (be consistent across repos):
+
+- Triggers:
+  - `push` on SemVer tags (`v*.*.*`) is the primary trigger.
+  - Optional: `workflow_dispatch` for manual retries/testing (consider a `tag` input that lets you re-run a specific tag).
+- Permissions:
+  - Set top-level permissions explicitly.
+  - Grant `contents: write` only in the job that creates releases or moves tags.
+- Validation:
+  - Re-run lint/typecheck/tests in the release workflow (defense in depth).
+  - Build/package the action in the release workflow (do not rely on a prebuilt local artifact).
+- Integrity:
+  - Checkout with `fetch-depth: 0` if you generate changelogs from git history.
+  - Assert `dist/` is up-to-date (fail if `git diff --exit-code` after `npm run package`).
+  - Ensure the release is built from the tagged commit.
+- Release output:
+  - Generate release notes (from `CHANGELOG.md` or commit history).
+  - Attach relevant artifacts when applicable.
+
+Floating tag updates (recommended when publishing actions):
+
+- Maintain a major floating tag (e.g., `v1`) pointing at the latest stable `v1.x.y`.
+- Optional: maintain a minor floating tag (e.g., `v1.2`) if consumers pin to minor.
+- Optional: maintain `latest` only if you have a clear policy for what it means.
+
+Consistency checklist (apply the same order across repos):
+
+1. Checkout tagged commit
+2. Setup Node
+3. Install dependencies (`npm ci`)
+4. Lint / typecheck / test
+5. Build/package (`npm run package`)
+6. Verify `dist/` is clean / consistent
+7. Create/update release notes
+8. Update floating tags (if used)
+9. Publish the release
+10. Add a brief job summary (`$GITHUB_STEP_SUMMARY`) with links and version info
+
+## 10) Security Best Practices
+
+- Minimize permissions in workflows and action usage examples.
+- Pin third-party actions to a major version at minimum (or commit SHA for maximum security).
+- Prefer using well-maintained actions over ad-hoc scripts for common tasks (checkout, setup runtime, caching, artifact upload, releases).
+- Avoid executing remote scripts via `curl | bash` unless you verify checksums/signatures.
+
+Scripts vs actions:
+
+- Prefer an action when it’s a standard, widely used task (less bespoke code, better ecosystem support).
+- Prefer an in-repo script when the logic is org-specific and needs versioning/review alongside the action.
+- If you find yourself copying the same inline `run: |` across repos, consider a reusable workflow or a small composite action.
+- Validate and sanitize any user-provided inputs used in shell commands.
+- Prefer `GITHUB_TOKEN` over PATs when possible.
+
+## 11) Documentation (README)
+
+Recommended sections:
+
+- What it does (1–2 paragraphs)
+- Quickstart usage snippet
+- Inputs table (name, required, default, description)
+- Outputs table
+- Permissions required (explicit)
+- Examples (common scenarios)
+- Troubleshooting / FAQ
+- Security notes (secrets, masking, permissions)
+- License
+
+When showing `uses:`, demonstrate stable pins:
+
+```yaml
+- uses: owner/repo@v1
+```
+
+## 12) Composite Action Notes
+
+- Always set a `shell` explicitly per step.
+- Use `${{ github.action_path }}` when referencing repo-local scripts.
+- Quote variables in bash (`"$VAR"`) and use `set -euo pipefail` where appropriate.
+- Avoid depending on tools that are not present on the runner without installing them.
+
+## Appendix: Minimal Templates
+
+### A) Minimal `action.yml` (Node.js)
+
+```yaml
+name: Action Name
+description: Brief description
+inputs:
+  verbose:
+    description: Enable verbose logs
+    required: false
+    default: 'false'
+outputs:
+  result:
+    description: Result value
+runs:
+  using: node20
+  main: dist/index.js
+branding:
+  icon: terminal
+  color: blue
+```
+
+### B) Minimal `action.yml` (Composite)
+
+```yaml
+name: Action Name
+description: Brief description
+inputs:
+  verbose:
+    description: Enable verbose logs
+    required: false
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Run script
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "hello"
+```

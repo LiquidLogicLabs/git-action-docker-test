@@ -1,0 +1,92 @@
+name: Test Docker Image
+description: Generic Docker image testing with healthcheck and s6 service validation
+author: LiquidLogicLabs
+inputs:
+  image:
+    description: Full image name with tag (e.g., registry/org/image:tag)
+    required: true
+  timeout:
+    description: Overall test timeout in seconds
+    required: false
+    default: "120"
+  startupTimeout:
+    description: Container startup timeout in seconds
+    required: false
+    default: "60"
+  minimalEnv:
+    description: 'JSON object of minimal environment variables (default: {"PUID":"1000","PGID":"1000","TZ":"UTC"})'
+    required: false
+    default: "{\"PUID\":\"1000\",\"PGID\":\"1000\",\"TZ\":\"UTC\"}"
+  skipHealthcheck:
+    description: Skip healthcheck verification
+    required: false
+    default: "false"
+  skipS6Check:
+    description: Skip s6 service verification
+    required: false
+    default: "false"
+  requiredServices:
+    description: Comma-separated list of required s6 services (auto-detected if not provided)
+    required: false
+    default: ""
+  errorPatterns:
+    description: Additional error patterns to detect (JSON array)
+    required: false
+    default: "[]"
+  mountDockerSocket:
+    description: Mount /var/run/docker.sock into container (read-only)
+    required: false
+    default: "false"
+  verbose:
+    description: Enable verbose logs
+    required: false
+    default: "false"
+  # Legacy inputs (deprecated)
+  startup_timeout:
+    description: "Deprecated: use startupTimeout"
+    required: false
+    default: ""
+  minimal_env:
+    description: "Deprecated: use minimalEnv"
+    required: false
+    default: ""
+  skip_healthcheck:
+    description: "Deprecated: use skipHealthcheck"
+    required: false
+    default: ""
+  skip_s6_check:
+    description: "Deprecated: use skipS6Check"
+    required: false
+    default: ""
+  required_services:
+    description: "Deprecated: use requiredServices"
+    required: false
+    default: ""
+  error_patterns:
+    description: "Deprecated: use errorPatterns"
+    required: false
+    default: ""
+  mount_docker_socket:
+    description: "Deprecated: use mountDockerSocket"
+    required: false
+    default: ""
+outputs:
+  status:
+    description: "Test status: success or failure"
+  logs:
+    description: Container logs (on failure)
+  healthcheckDetected:
+    description: Whether healthcheck was detected in image
+  servicesDetected:
+    description: List of s6 services detected (JSON array)
+  # Legacy outputs (deprecated)
+  healthcheck_detected:
+    description: "Deprecated: use healthcheckDetected"
+  services_detected:
+    description: "Deprecated: use servicesDetected"
+runs:
+  using: node20
+  main: dist/index.js
+branding:
+  icon: "check-circle"
+  color: "blue"

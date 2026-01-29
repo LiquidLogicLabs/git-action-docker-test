@@ -1,0 +1,6 @@
+{
+  "_comment": "Simulated workflow_dispatch input payload for act.",
+  "inputs": {
+    "tag": "v0.1.0"
+  }
+}

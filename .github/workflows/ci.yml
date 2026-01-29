@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    paths-ignore:
+      - "**/*.md"
+  pull_request:
+    branches: ["**"]
+    paths-ignore:
+      - "**/*.md"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
+  typecheck:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+
+  test:
+    runs-on: ubuntu-latest
+    needs: typecheck
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  package:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - name: Snapshot dist (non-git fallback)
+        run: |
+          if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            echo "Git worktree detected; will use git diff for verification."
+            exit 0
+          fi
+
+          echo "No git worktree detected; snapshotting dist for diff verification."
+          rm -rf /tmp/dist.before
+          mkdir -p /tmp/dist.before
+          if [ -d dist ]; then
+            cp -a dist/. /tmp/dist.before/
+          fi
+      - run: npm run package
+      - name: Verify clean (git) or dist unchanged (fallback)
+        run: |
+          if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            git diff --exit-code
+            exit 0
+          fi
+
+          mkdir -p dist
+          diff -ru /tmp/dist.before dist

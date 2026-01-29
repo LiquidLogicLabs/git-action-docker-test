@@ -1,0 +1,93 @@
+name: E2E
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ["**"]
+    paths-ignore:
+      - "**/*.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: non-s6-whoami
+            image: traefik/whoami:v1.10.3
+            timeout: "60"
+            startupTimeout: "10"
+            skipHealthcheck: "false"
+            skipS6Check: "false"
+            expectHealthcheckDetected: "false"
+            expectServicesMin: 0
+
+          - name: s6-linuxserver-baseimage
+            image: ghcr.io/linuxserver/baseimage-alpine:3.20
+            timeout: "120"
+            startupTimeout: "30"
+            skipHealthcheck: "false"
+            skipS6Check: "false"
+            expectHealthcheckDetected: "false"
+            expectServicesMin: 1
+
+    name: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Package (ensure dist is up-to-date)
+        run: npm run package
+
+      - name: Pull fixture image
+        run: docker pull "${{ matrix.image }}"
+
+      - name: Run action
+        id: run_action
+        uses: ./
+        with:
+          image: ${{ matrix.image }}
+          timeout: ${{ matrix.timeout }}
+          startupTimeout: ${{ matrix.startupTimeout }}
+          skipHealthcheck: ${{ matrix.skipHealthcheck }}
+          skipS6Check: ${{ matrix.skipS6Check }}
+          verbose: "true"
+
+      - name: Assert outputs
+        env:
+          SERVICES_DETECTED_JSON: ${{ steps.run_action.outputs.servicesDetected }}
+          HEALTHCHECK_DETECTED: ${{ steps.run_action.outputs.healthcheckDetected }}
+          STATUS: ${{ steps.run_action.outputs.status }}
+          EXPECT_HEALTHCHECK_DETECTED: ${{ matrix.expectHealthcheckDetected }}
+          EXPECT_SERVICES_MIN: ${{ matrix.expectServicesMin }}
+        run: |
+          echo "image=${{ matrix.image }}"
+          echo "status=${STATUS}"
+          echo "healthcheckDetected=${HEALTHCHECK_DETECTED}"
+          echo "servicesDetected=${SERVICES_DETECTED_JSON}"
+
+          test "${STATUS}" = "success"
+          test "${HEALTHCHECK_DETECTED}" = "${EXPECT_HEALTHCHECK_DETECTED}"
+
+          node -e '
+            const servicesJson = process.env.SERVICES_DETECTED_JSON;
+            const min = Number(process.env.EXPECT_SERVICES_MIN || "0");
+            const arr = JSON.parse(servicesJson || "[]");
+            if (!Array.isArray(arr)) process.exit(1);
+            if (arr.length < min) process.exit(1);
+          '
