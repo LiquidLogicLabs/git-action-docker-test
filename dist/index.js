@@ -25709,7 +25709,10 @@ async function run() {
             throw new Error("Input 'image' is required");
         }
         // Use core.debug plus optional verbose info for detailed logs.
-        const verbose = (0, inputs_1.parseBoolean)((0, inputs_1.getInputWithFallback)("verbose"), false, "verbose");
+        const verboseInput = (0, inputs_1.parseBoolean)((0, inputs_1.getInputWithFallback)("verbose"), false, "verbose");
+        const envStepDebug = (process.env.ACTIONS_STEP_DEBUG || "").toLowerCase();
+        const stepDebugEnabled = (typeof core.isDebug === "function" && core.isDebug()) || envStepDebug === "true" || envStepDebug === "1";
+        const verbose = verboseInput || stepDebugEnabled;
         const debug = (message) => {
             core.debug(message);
             if (verbose) {
