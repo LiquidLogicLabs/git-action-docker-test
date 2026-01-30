@@ -38,7 +38,7 @@ inputs:
     required: false
     default: "false"
   verbose:
-    description: Enable verbose logs
+    description: Enable verbose logs. Also enabled when ACTIONS_STEP_DEBUG=true.
     required: false
     default: "false"
   # Legacy inputs (deprecated)
