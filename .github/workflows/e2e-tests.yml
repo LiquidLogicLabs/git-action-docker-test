@@ -40,19 +40,9 @@ jobs:
             expectServicesMin: 1
 
     name: ${{ matrix.name }}
+    # Run action from committed dist only (no build). Ensures E2E fails if dist is unbundled.
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-
-      - name: Install
-        run: npm ci
-
-      - name: Package (ensure dist is up-to-date)
-        run: npm run package
 
       - name: Pull fixture image
         run: docker pull "${{ matrix.image }}"
