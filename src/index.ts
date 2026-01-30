@@ -36,7 +36,7 @@ export async function run(): Promise<void> {
     // Use core.debug plus optional verbose info for detailed logs.
     const verboseInput = parseBoolean(getInputWithFallback("verbose"), false, "verbose");
     const envStepDebug = (process.env.ACTIONS_STEP_DEBUG || "").toLowerCase();
-    const stepDebugEnabled = core.isDebug() || envStepDebug === "true" || envStepDebug === "1";
+    const stepDebugEnabled = (typeof core.isDebug === "function" && core.isDebug()) || envStepDebug === "true" || envStepDebug === "1";
     const verbose = verboseInput || stepDebugEnabled;
     const debug = (message: string): void => {
       core.debug(message);
