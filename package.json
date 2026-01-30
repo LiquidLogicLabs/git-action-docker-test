@@ -15,6 +15,14 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "clean": "rimraf dist coverage *.tsbuildinfo",
+    "release:patch": "standard-version --release-as patch --skip.changelog && git push --follow-tags",
+    "release:minor": "standard-version --release-as minor --skip.changelog && git push --follow-tags",
+    "release:major": "standard-version --release-as major --skip.changelog && git push --follow-tags",
+    "version:dry-run": "standard-version --dry-run",
+    "version:patch": "standard-version --release-as patch",
+    "version:minor": "standard-version --release-as minor",
+    "version:major": "standard-version --release-as major",
+    "release:push": "git push --follow-tags origin HEAD",
     "test:act": "act --container-options \"--user $(id -u):$(id -g)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/ci.yml",
     "test:act:verbose": "act --container-options \"--user $(id -u):$(id -g)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/ci.yml -v",
     "test:act:ci:push": "act --container-options \"--user $(id -u):$(id -g)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/ci.yml --eventpath .github/workflows/.act/event-push.json",
@@ -40,7 +48,11 @@
     "jest": "^29.7.0",
     "prettier": "^3.4.2",
     "rimraf": "^6.0.1",
+    "standard-version": "^9.5.0",
     "ts-jest": "^29.2.5",
     "typescript": "^5.7.3"
+  },
+  "standard-version": {
+    "tagPrefix": "v"
   }
 }
