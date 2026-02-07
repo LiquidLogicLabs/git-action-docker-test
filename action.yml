@@ -41,35 +41,6 @@ inputs:
     description: Enable verbose logs. Also enabled when ACTIONS_STEP_DEBUG=true.
     required: false
     default: "false"
-  # Legacy inputs (deprecated)
-  startup_timeout:
-    description: "Deprecated: use startupTimeout"
-    required: false
-    default: ""
-  minimal_env:
-    description: "Deprecated: use minimalEnv"
-    required: false
-    default: ""
-  skip_healthcheck:
-    description: "Deprecated: use skipHealthcheck"
-    required: false
-    default: ""
-  skip_s6_check:
-    description: "Deprecated: use skipS6Check"
-    required: false
-    default: ""
-  required_services:
-    description: "Deprecated: use requiredServices"
-    required: false
-    default: ""
-  error_patterns:
-    description: "Deprecated: use errorPatterns"
-    required: false
-    default: ""
-  mount_docker_socket:
-    description: "Deprecated: use mountDockerSocket"
-    required: false
-    default: ""
 outputs:
   status:
     description: "Test status: success or failure"
@@ -79,11 +50,6 @@ outputs:
     description: Whether healthcheck was detected in image
   servicesDetected:
     description: List of s6 services detected (JSON array)
-  # Legacy outputs (deprecated)
-  healthcheck_detected:
-    description: "Deprecated: use healthcheckDetected"
-  services_detected:
-    description: "Deprecated: use servicesDetected"
 runs:
   using: node20
   main: dist/index.js

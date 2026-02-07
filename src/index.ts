@@ -8,7 +8,7 @@ import {
   waitForContainer,
   buildEnvArgs
 } from "./lib/docker";
-import { getInputWithFallback, parseBoolean, parseJsonArray, parseJsonObject, parseNumber } from "./lib/inputs";
+import { getInputs } from "./config";
 import { checkLogsForErrors, getContainerLogs, saveLogs } from "./lib/logs";
 import { execCommand } from "./lib/exec";
 import { sleep } from "./lib/utils";
@@ -28,70 +28,29 @@ export async function run(): Promise<void> {
   };
 
   try {
-    const image = getInputWithFallback("image");
-    if (!image) {
-      throw new Error("Input 'image' is required");
-    }
+    const inputs = getInputs();
 
     // Use core.debug plus optional verbose info for detailed logs.
-    const verboseInput = parseBoolean(getInputWithFallback("verbose"), false, "verbose");
-    const envStepDebug = (process.env.ACTIONS_STEP_DEBUG || "").toLowerCase();
-    const stepDebugEnabled = (typeof core.isDebug === "function" && core.isDebug()) || envStepDebug === "true" || envStepDebug === "1";
-    const verbose = verboseInput || stepDebugEnabled;
+    const verbose = inputs.verbose;
     const debug = (message: string): void => {
       core.debug(message);
       if (verbose) {
         core.info(`[DEBUG] ${message}`);
       }
     };
-
-    const timeout = parseNumber(
-      getInputWithFallback("timeout"),
-      120,
-      "timeout"
-    );
-    const deadlineMs = Date.now() + timeout * 1000;
-    const startupTimeout = parseNumber(
-      getInputWithFallback("startupTimeout", "startup_timeout"),
-      60,
-      "startupTimeout"
-    );
-    const minimalEnvInput = getInputWithFallback("minimalEnv", "minimal_env");
-    const skipHealthcheck = parseBoolean(
-      getInputWithFallback("skipHealthcheck", "skip_healthcheck"),
-      false,
-      "skipHealthcheck"
-    );
-    const skipS6Check = parseBoolean(
-      getInputWithFallback("skipS6Check", "skip_s6_check"),
-      false,
-      "skipS6Check"
-    );
-    const requiredServicesInput = getInputWithFallback(
-      "requiredServices",
-      "required_services"
-    );
-    const errorPatternsInput = getInputWithFallback("errorPatterns", "error_patterns");
-    const mountDockerSocket = parseBoolean(
-      getInputWithFallback("mountDockerSocket", "mount_docker_socket"),
-      false,
-      "mountDockerSocket"
-    );
-
-    const minimalEnv = parseJsonObject(minimalEnvInput, "minimalEnv");
-    const customErrorPatterns = parseJsonArray(errorPatternsInput, "errorPatterns");
+    const deadlineMs = Date.now() + inputs.timeout * 1000;
 
     core.info("==========================================");
-    core.info(`Testing Docker Image: ${image}`);
+    core.info(`Testing Docker Image: ${inputs.image}`);
     core.info("==========================================");
-    for (const [key, value] of Object.entries(minimalEnv)) {
+    for (const [key, value] of Object.entries(inputs.minimalEnv)) {
       maybeMaskSecret(key, value);
     }
-    debug(`Minimal env keys: ${Object.keys(minimalEnv).join(",") || "(none)"}`);
-    debug(`Mount docker socket: ${mountDockerSocket}`);
+    debug(`Minimal env keys: ${Object.keys(inputs.minimalEnv).join(",") || "(none)"}`);
+    debug(`Mount docker socket: ${inputs.mountDockerSocket}`);
 
     core.info("Step 1: Extracting healthcheck from image...");
-    const healthcheckCmd = await extractHealthcheck(image);
+    const healthcheckCmd = await extractHealthcheck(inputs.image);
     if (healthcheckCmd) {
       healthcheckDetected = true;
       core.info(`  Healthcheck detected: ${healthcheckCmd}`);
@@ -100,10 +59,10 @@ export async function run(): Promise<void> {
     }
 
     core.info("Step 2: Starting container...");
-    const envArgs = buildEnvArgs(minimalEnv);
+    const envArgs = buildEnvArgs(inputs.minimalEnv);
     const dockerArgs = ["run", "-d", "--rm", ...envArgs];
 
-    if (mountDockerSocket) {
+    if (inputs.mountDockerSocket) {
       try {
         const stat = fs.statSync("/var/run/docker.sock");
         if (stat.isSocket()) {
@@ -116,7 +75,7 @@ export async function run(): Promise<void> {
       }
     }
 
-    dockerArgs.push(image);
+    dockerArgs.push(inputs.image);
     const runResult = await execCommand("docker", dockerArgs, true, true);
     if (runResult.exitCode !== 0) {
       throw new Error(`Failed to start container: ${runResult.stderr || runResult.stdout}`);
@@ -125,14 +84,14 @@ export async function run(): Promise<void> {
     core.info(`  Container started: ${containerId}`);
 
     core.info("Step 3: Waiting for container to be running...");
-    await waitForContainer(containerId, startupTimeout, deadlineMs);
+    await waitForContainer(containerId, inputs.startupTimeout, deadlineMs);
 
     core.info("Step 4: Discovering s6 services...");
-    const services = skipS6Check
+    const services = inputs.skipS6Check
       ? { allServices: [], longrunServices: [] }
       : await discoverServices(containerId);
     servicesDetected = services.allServices;
-    if (skipS6Check) {
+    if (inputs.skipS6Check) {
       core.info("  Skipping s6 discovery (skipS6Check=true)");
     } else if (services.allServices.length > 0) {
       core.info(
@@ -142,7 +101,7 @@ export async function run(): Promise<void> {
       core.info("  No s6 services discovered");
     }
 
-    let requiredServices = requiredServicesInput
+    let requiredServices = inputs.requiredServices
       .split(",")
       .map((service) => service.trim())
       .filter(Boolean);
@@ -153,12 +112,12 @@ export async function run(): Promise<void> {
     }
 
     core.info("Step 5: Verifying s6 services...");
-    if (!skipS6Check && requiredServices.length > 0) {
+    if (!inputs.skipS6Check && requiredServices.length > 0) {
       for (const service of requiredServices) {
         core.info(`  Checking service: ${service}`);
         let status = "";
         // Some images start services asynchronously after the container is running.
-        const serviceDeadlineMs = Math.min(deadlineMs, Date.now() + startupTimeout * 1000);
+        const serviceDeadlineMs = Math.min(deadlineMs, Date.now() + inputs.startupTimeout * 1000);
         while (Date.now() <= serviceDeadlineMs) {
           status = await checkService(containerId, service);
           core.info(`    Service status: ${status}`);
@@ -171,7 +130,7 @@ export async function run(): Promise<void> {
         core.info(`    ✓ Service ${service} is up`);
       }
       core.info("  ✓ All required services are running");
-    } else if (skipS6Check) {
+    } else if (inputs.skipS6Check) {
       core.info("  Skipping s6 service check (skipS6Check=true)");
     } else {
       core.info("  Skipping s6 service check (no required services specified)");
@@ -181,7 +140,7 @@ export async function run(): Promise<void> {
     if (Date.now() > deadlineMs) {
       throw new Error("Overall timeout exceeded before log inspection");
     }
-    const logCheck = await checkLogsForErrors(containerId, customErrorPatterns);
+    const logCheck = await checkLogsForErrors(containerId, inputs.errorPatterns);
     latestLogs = logCheck.logs;
     saveLogs(latestLogs);
     if (!logCheck.ok) {
@@ -192,10 +151,10 @@ export async function run(): Promise<void> {
     }
 
     core.info("Step 7: Verifying healthcheck...");
-    if (!skipHealthcheck && healthcheckDetected) {
-      await checkHealthcheck(containerId, startupTimeout, deadlineMs);
+    if (!inputs.skipHealthcheck && healthcheckDetected) {
+      await checkHealthcheck(containerId, inputs.startupTimeout, deadlineMs);
       core.info("  ✓ Healthcheck passed");
-    } else if (skipHealthcheck) {
+    } else if (inputs.skipHealthcheck) {
       core.info("  Skipping healthcheck verification (skipHealthcheck=true)");
     } else {
       core.info("  No healthcheck to verify (container is running)");
@@ -208,15 +167,11 @@ export async function run(): Promise<void> {
     core.setOutput("status", "success");
     core.setOutput("healthcheckDetected", String(healthcheckDetected));
     core.setOutput("servicesDetected", JSON.stringify(servicesDetected));
-    core.setOutput("healthcheck_detected", String(healthcheckDetected));
-    core.setOutput("services_detected", JSON.stringify(servicesDetected));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     core.setOutput("status", "failure");
     core.setOutput("healthcheckDetected", String(healthcheckDetected));
     core.setOutput("servicesDetected", JSON.stringify(servicesDetected));
-    core.setOutput("healthcheck_detected", String(healthcheckDetected));
-    core.setOutput("services_detected", JSON.stringify(servicesDetected));
     if (containerId) {
       latestLogs = latestLogs || (await getContainerLogs(containerId));
       core.setOutput("logs", latestLogs);

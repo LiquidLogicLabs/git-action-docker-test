@@ -36,7 +36,6 @@ jobs:
 Notes:
 
 - Boolean inputs must be passed as strings (`"true"`/`"false"`).
-- Legacy snake_case input names are supported but deprecated: `startup_timeout`, `minimal_env`, `skip_healthcheck`, `skip_s6_check`, `required_services`, `error_patterns`, `mount_docker_socket`.
 
 ## Outputs
 
@@ -46,8 +45,6 @@ Notes:
 | `logs` | Container logs (string) on failure. |
 | `healthcheckDetected` | `true`/`false` string indicating whether a healthcheck was detected. |
 | `servicesDetected` | JSON array (string) of detected s6 services. |
-
-Legacy output names are also set for compatibility: `healthcheck_detected`, `services_detected`.
 
 ## Permissions
 
