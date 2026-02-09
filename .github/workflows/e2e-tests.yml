@@ -54,15 +54,15 @@ jobs:
         with:
           image: ${{ matrix.image }}
           timeout: ${{ matrix.timeout }}
-          startupTimeout: ${{ matrix.startupTimeout }}
-          skipHealthcheck: ${{ matrix.skipHealthcheck }}
-          skipS6Check: ${{ matrix.skipS6Check }}
+          startup-timeout: ${{ matrix.startupTimeout }}
+          skip-healthcheck: ${{ matrix.skipHealthcheck }}
+          skip-s6-check: ${{ matrix.skipS6Check }}
           verbose: "true"
 
       - name: Assert outputs
         env:
-          SERVICES_DETECTED_JSON: ${{ steps.run_action.outputs.servicesDetected }}
-          HEALTHCHECK_DETECTED: ${{ steps.run_action.outputs.healthcheckDetected }}
+          SERVICES_DETECTED_JSON: ${{ steps.run_action.outputs.services-detected }}
+          HEALTHCHECK_DETECTED: ${{ steps.run_action.outputs.healthcheck-detected }}
           STATUS: ${{ steps.run_action.outputs.status }}
           EXPECT_HEALTHCHECK_DETECTED: ${{ matrix.expectHealthcheckDetected }}
           EXPECT_SERVICES_MIN: ${{ matrix.expectServicesMin }}

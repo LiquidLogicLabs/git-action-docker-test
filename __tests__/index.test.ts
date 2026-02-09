@@ -6,6 +6,7 @@ type CoreMock = {
   warning: jest.Mock;
   debug: jest.Mock;
   setSecret: jest.Mock;
+  isDebug: jest.Mock;
 };
 
 describe("action run()", () => {
@@ -16,7 +17,8 @@ describe("action run()", () => {
     info: jest.fn(),
     warning: jest.fn(),
     debug: jest.fn(),
-    setSecret: jest.fn()
+    setSecret: jest.fn(),
+    isDebug: jest.fn().mockReturnValue(false)
   });
 
   it("sets success outputs on happy path", async () => {
@@ -70,13 +72,13 @@ describe("action run()", () => {
       image: "img:tag",
       verbose: "false",
       timeout: "120",
-      startupTimeout: "60",
-      minimalEnv: '{"PUID":"1000"}',
-      skipHealthcheck: "false",
-      skipS6Check: "false",
-      requiredServices: "",
-      errorPatterns: "[]",
-      mountDockerSocket: "false"
+      "startup-timeout": "60",
+      "minimal-env": '{"PUID":"1000"}',
+      "skip-healthcheck": "false",
+      "skip-s6-check": "false",
+      "required-services": "",
+      "error-patterns": "[]",
+      "mount-docker-socket": "false"
     };
 
     core.getInput.mockImplementation((name: string) => inputs[name] ?? "");
@@ -86,8 +88,8 @@ describe("action run()", () => {
 
     expect(core.setFailed).not.toHaveBeenCalled();
     expect(core.setOutput).toHaveBeenCalledWith("status", "success");
-    expect(core.setOutput).toHaveBeenCalledWith("healthcheckDetected", "true");
-    expect(core.setOutput).toHaveBeenCalledWith("servicesDetected", JSON.stringify(["svc1"]));
+    expect(core.setOutput).toHaveBeenCalledWith("healthcheck-detected", "true");
+    expect(core.setOutput).toHaveBeenCalledWith("services-detected", JSON.stringify(["svc1"]));
 
     // ensure cleanup attempted
     expect(execCommand).toHaveBeenCalledWith("docker", ["stop", "container-id"], true, true);
@@ -142,13 +144,13 @@ describe("action run()", () => {
       image: "img:tag",
       verbose: "false",
       timeout: "120",
-      startupTimeout: "60",
-      minimalEnv: '{"PUID":"1000"}',
-      skipHealthcheck: "true",
-      skipS6Check: "true",
-      requiredServices: "",
-      errorPatterns: "[]",
-      mountDockerSocket: "false"
+      "startup-timeout": "60",
+      "minimal-env": '{"PUID":"1000"}',
+      "skip-healthcheck": "true",
+      "skip-s6-check": "true",
+      "required-services": "",
+      "error-patterns": "[]",
+      "mount-docker-socket": "false"
     };
 
     core.getInput.mockImplementation((name: string) => inputs[name] ?? "");
@@ -207,13 +209,13 @@ describe("action run()", () => {
       image: "img:tag",
       verbose: "true",
       timeout: "120",
-      startupTimeout: "60",
-      minimalEnv: '{"API_TOKEN":"super-secret"}',
-      skipHealthcheck: "true",
-      skipS6Check: "true",
-      requiredServices: "",
-      errorPatterns: "[]",
-      mountDockerSocket: "true"
+      "startup-timeout": "60",
+      "minimal-env": '{"API_TOKEN":"super-secret"}',
+      "skip-healthcheck": "true",
+      "skip-s6-check": "true",
+      "required-services": "",
+      "error-patterns": "[]",
+      "mount-docker-socket": "true"
     };
 
     core.getInput.mockImplementation((name: string) => inputs[name] ?? "");
@@ -225,7 +227,8 @@ describe("action run()", () => {
     expect(core.warning).toHaveBeenCalledWith(
       "/var/run/docker.sock is not a socket, skipping mount"
     );
-    expect(core.info).toHaveBeenCalledWith(expect.stringContaining("[DEBUG]"));
+    // verbose=true enables verboseInfo() output via core.info()
+    expect(core.info).toHaveBeenCalledWith(expect.stringContaining("Minimal env keys:"));
   });
 
   it("fails when a required service is not up", async () => {
@@ -277,13 +280,13 @@ describe("action run()", () => {
       image: "img:tag",
       verbose: "false",
       timeout: "10",
-      startupTimeout: "1",
-      minimalEnv: '{"PUID":"1000"}',
-      skipHealthcheck: "true",
-      skipS6Check: "false",
-      requiredServices: "svc1",
-      errorPatterns: "[]",
-      mountDockerSocket: "false"
+      "startup-timeout": "1",
+      "minimal-env": '{"PUID":"1000"}',
+      "skip-healthcheck": "true",
+      "skip-s6-check": "false",
+      "required-services": "svc1",
+      "error-patterns": "[]",
+      "mount-docker-socket": "false"
     };
 
     core.getInput.mockImplementation((name: string) => inputs[name] ?? "");

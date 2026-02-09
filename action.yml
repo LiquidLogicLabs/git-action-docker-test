@@ -9,31 +9,31 @@ inputs:
     description: Overall test timeout in seconds
     required: false
     default: "120"
-  startupTimeout:
+  startup-timeout:
     description: Container startup timeout in seconds
     required: false
     default: "60"
-  minimalEnv:
+  minimal-env:
     description: 'JSON object of minimal environment variables (default: {"PUID":"1000","PGID":"1000","TZ":"UTC"})'
     required: false
     default: "{\"PUID\":\"1000\",\"PGID\":\"1000\",\"TZ\":\"UTC\"}"
-  skipHealthcheck:
+  skip-healthcheck:
     description: Skip healthcheck verification
     required: false
     default: "false"
-  skipS6Check:
+  skip-s6-check:
     description: Skip s6 service verification
     required: false
     default: "false"
-  requiredServices:
+  required-services:
     description: Comma-separated list of required s6 services (auto-detected if not provided)
     required: false
     default: ""
-  errorPatterns:
+  error-patterns:
     description: Additional error patterns to detect (JSON array)
     required: false
     default: "[]"
-  mountDockerSocket:
+  mount-docker-socket:
     description: Mount /var/run/docker.sock into container (read-only)
     required: false
     default: "false"
@@ -46,9 +46,9 @@ outputs:
     description: "Test status: success or failure"
   logs:
     description: Container logs (on failure)
-  healthcheckDetected:
+  healthcheck-detected:
     description: Whether healthcheck was detected in image
-  servicesDetected:
+  services-detected:
     description: List of s6 services detected (JSON array)
 runs:
   using: node20

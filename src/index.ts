@@ -12,6 +12,7 @@ import { getInputs } from "./config";
 import { checkLogsForErrors, getContainerLogs, saveLogs } from "./lib/logs";
 import { execCommand } from "./lib/exec";
 import { sleep } from "./lib/utils";
+import { Logger } from "./logger";
 
 export async function run(): Promise<void> {
   let containerId = "";
@@ -30,14 +31,7 @@ export async function run(): Promise<void> {
   try {
     const inputs = getInputs();
 
-    // Use core.debug plus optional verbose info for detailed logs.
-    const verbose = inputs.verbose;
-    const debug = (message: string): void => {
-      core.debug(message);
-      if (verbose) {
-        core.info(`[DEBUG] ${message}`);
-      }
-    };
+    const logger = new Logger(inputs.verbose, inputs.debugMode);
     const deadlineMs = Date.now() + inputs.timeout * 1000;
 
     core.info("==========================================");
@@ -46,8 +40,8 @@ export async function run(): Promise<void> {
     for (const [key, value] of Object.entries(inputs.minimalEnv)) {
       maybeMaskSecret(key, value);
     }
-    debug(`Minimal env keys: ${Object.keys(inputs.minimalEnv).join(",") || "(none)"}`);
-    debug(`Mount docker socket: ${inputs.mountDockerSocket}`);
+    logger.verboseInfo(`Minimal env keys: ${Object.keys(inputs.minimalEnv).join(",") || "(none)"}`);
+    logger.verboseInfo(`Mount docker socket: ${inputs.mountDockerSocket}`);
 
     core.info("Step 1: Extracting healthcheck from image...");
     const healthcheckCmd = await extractHealthcheck(inputs.image);
@@ -92,7 +86,7 @@ export async function run(): Promise<void> {
       : await discoverServices(containerId);
     servicesDetected = services.allServices;
     if (inputs.skipS6Check) {
-      core.info("  Skipping s6 discovery (skipS6Check=true)");
+      core.info("  Skipping s6 discovery (skip-s6-check=true)");
     } else if (services.allServices.length > 0) {
       core.info(
         `  Found ${services.allServices.length} service(s): ${services.allServices.join(" ")}`
@@ -131,7 +125,7 @@ export async function run(): Promise<void> {
       }
       core.info("  ✓ All required services are running");
     } else if (inputs.skipS6Check) {
-      core.info("  Skipping s6 service check (skipS6Check=true)");
+      core.info("  Skipping s6 service check (skip-s6-check=true)");
     } else {
       core.info("  Skipping s6 service check (no required services specified)");
     }
@@ -145,8 +139,8 @@ export async function run(): Promise<void> {
     saveLogs(latestLogs);
     if (!logCheck.ok) {
       const preview = logCheck.matchedLines.slice(0, 20).join("\n");
-      debug(`Matched patterns: ${logCheck.matchedPatterns.join(", ")}`);
-      debug(`Matched lines (first 20):\n${preview}`);
+      logger.verboseInfo(`Matched patterns: ${logCheck.matchedPatterns.join(", ")}`);
+      logger.verboseInfo(`Matched lines (first 20):\n${preview}`);
       throw new Error("Errors detected in logs");
     }
 
@@ -155,7 +149,7 @@ export async function run(): Promise<void> {
       await checkHealthcheck(containerId, inputs.startupTimeout, deadlineMs);
       core.info("  ✓ Healthcheck passed");
     } else if (inputs.skipHealthcheck) {
-      core.info("  Skipping healthcheck verification (skipHealthcheck=true)");
+      core.info("  Skipping healthcheck verification (skip-healthcheck=true)");
     } else {
       core.info("  No healthcheck to verify (container is running)");
     }
@@ -165,13 +159,13 @@ export async function run(): Promise<void> {
     core.info("==========================================");
 
     core.setOutput("status", "success");
-    core.setOutput("healthcheckDetected", String(healthcheckDetected));
-    core.setOutput("servicesDetected", JSON.stringify(servicesDetected));
+    core.setOutput("healthcheck-detected", String(healthcheckDetected));
+    core.setOutput("services-detected", JSON.stringify(servicesDetected));
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     core.setOutput("status", "failure");
-    core.setOutput("healthcheckDetected", String(healthcheckDetected));
-    core.setOutput("servicesDetected", JSON.stringify(servicesDetected));
+    core.setOutput("healthcheck-detected", String(healthcheckDetected));
+    core.setOutput("services-detected", JSON.stringify(servicesDetected));
     if (containerId) {
       latestLogs = latestLogs || (await getContainerLogs(containerId));
       core.setOutput("logs", latestLogs);

@@ -12,6 +12,7 @@ export type DockerTestInputs = {
   errorPatterns: string[];
   mountDockerSocket: boolean;
   verbose: boolean;
+  debugMode: boolean;
 };
 
 export function getInputs(): DockerTestInputs {
@@ -23,27 +24,29 @@ export function getInputs(): DockerTestInputs {
   const verboseInput = parseBoolean(core.getInput('verbose'), false, 'verbose');
   const envStepDebug = (process.env.ACTIONS_STEP_DEBUG || '').toLowerCase();
   const stepDebugEnabled = (typeof core.isDebug === 'function' && core.isDebug()) || envStepDebug === 'true' || envStepDebug === '1';
-  const verbose = verboseInput || stepDebugEnabled;
+  const debugMode = stepDebugEnabled;
+  const verbose = verboseInput || debugMode;
 
   const timeout = parseNumber(core.getInput('timeout'), 120, 'timeout');
-  const startupTimeout = parseNumber(core.getInput('startupTimeout'), 60, 'startupTimeout');
-  const minimalEnvInput = core.getInput('minimalEnv');
-  const skipHealthcheck = parseBoolean(core.getInput('skipHealthcheck'), false, 'skipHealthcheck');
-  const skipS6Check = parseBoolean(core.getInput('skipS6Check'), false, 'skipS6Check');
-  const requiredServices = core.getInput('requiredServices');
-  const errorPatterns = parseJsonArray(core.getInput('errorPatterns'), 'errorPatterns');
-  const mountDockerSocket = parseBoolean(core.getInput('mountDockerSocket'), false, 'mountDockerSocket');
+  const startupTimeout = parseNumber(core.getInput('startup-timeout'), 60, 'startup-timeout');
+  const minimalEnvInput = core.getInput('minimal-env');
+  const skipHealthcheck = parseBoolean(core.getInput('skip-healthcheck'), false, 'skip-healthcheck');
+  const skipS6Check = parseBoolean(core.getInput('skip-s6-check'), false, 'skip-s6-check');
+  const requiredServices = core.getInput('required-services');
+  const errorPatterns = parseJsonArray(core.getInput('error-patterns'), 'error-patterns');
+  const mountDockerSocket = parseBoolean(core.getInput('mount-docker-socket'), false, 'mount-docker-socket');
 
   return {
     image,
     timeout,
     startupTimeout,
-    minimalEnv: parseJsonObject(minimalEnvInput, 'minimalEnv'),
+    minimalEnv: parseJsonObject(minimalEnvInput, 'minimal-env'),
     skipHealthcheck,
     skipS6Check,
     requiredServices,
     errorPatterns,
     mountDockerSocket,
     verbose,
+    debugMode,
   };
 }

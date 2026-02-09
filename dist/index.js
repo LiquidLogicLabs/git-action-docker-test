@@ -25693,26 +25693,28 @@ function getInputs() {
     const verboseInput = (0, inputs_1.parseBoolean)(core.getInput('verbose'), false, 'verbose');
     const envStepDebug = (process.env.ACTIONS_STEP_DEBUG || '').toLowerCase();
     const stepDebugEnabled = (typeof core.isDebug === 'function' && core.isDebug()) || envStepDebug === 'true' || envStepDebug === '1';
-    const verbose = verboseInput || stepDebugEnabled;
+    const debugMode = stepDebugEnabled;
+    const verbose = verboseInput || debugMode;
     const timeout = (0, inputs_1.parseNumber)(core.getInput('timeout'), 120, 'timeout');
-    const startupTimeout = (0, inputs_1.parseNumber)(core.getInput('startupTimeout'), 60, 'startupTimeout');
-    const minimalEnvInput = core.getInput('minimalEnv');
-    const skipHealthcheck = (0, inputs_1.parseBoolean)(core.getInput('skipHealthcheck'), false, 'skipHealthcheck');
-    const skipS6Check = (0, inputs_1.parseBoolean)(core.getInput('skipS6Check'), false, 'skipS6Check');
-    const requiredServices = core.getInput('requiredServices');
-    const errorPatterns = (0, inputs_1.parseJsonArray)(core.getInput('errorPatterns'), 'errorPatterns');
-    const mountDockerSocket = (0, inputs_1.parseBoolean)(core.getInput('mountDockerSocket'), false, 'mountDockerSocket');
+    const startupTimeout = (0, inputs_1.parseNumber)(core.getInput('startup-timeout'), 60, 'startup-timeout');
+    const minimalEnvInput = core.getInput('minimal-env');
+    const skipHealthcheck = (0, inputs_1.parseBoolean)(core.getInput('skip-healthcheck'), false, 'skip-healthcheck');
+    const skipS6Check = (0, inputs_1.parseBoolean)(core.getInput('skip-s6-check'), false, 'skip-s6-check');
+    const requiredServices = core.getInput('required-services');
+    const errorPatterns = (0, inputs_1.parseJsonArray)(core.getInput('error-patterns'), 'error-patterns');
+    const mountDockerSocket = (0, inputs_1.parseBoolean)(core.getInput('mount-docker-socket'), false, 'mount-docker-socket');
     return {
         image,
         timeout,
         startupTimeout,
-        minimalEnv: (0, inputs_1.parseJsonObject)(minimalEnvInput, 'minimalEnv'),
+        minimalEnv: (0, inputs_1.parseJsonObject)(minimalEnvInput, 'minimal-env'),
         skipHealthcheck,
         skipS6Check,
         requiredServices,
         errorPatterns,
         mountDockerSocket,
         verbose,
+        debugMode,
     };
 }
 
@@ -25766,6 +25768,7 @@ const config_1 = __nccwpck_require__(2973);
 const logs_1 = __nccwpck_require__(368);
 const exec_1 = __nccwpck_require__(766);
 const utils_1 = __nccwpck_require__(8974);
+const logger_1 = __nccwpck_require__(6999);
 async function run() {
     let containerId = "";
     let healthcheckDetected = false;
@@ -25781,14 +25784,7 @@ async function run() {
     };
     try {
         const inputs = (0, config_1.getInputs)();
-        // Use core.debug plus optional verbose info for detailed logs.
-        const verbose = inputs.verbose;
-        const debug = (message) => {
-            core.debug(message);
-            if (verbose) {
-                core.info(`[DEBUG] ${message}`);
-            }
-        };
+        const logger = new logger_1.Logger(inputs.verbose, inputs.debugMode);
         const deadlineMs = Date.now() + inputs.timeout * 1000;
         core.info("==========================================");
         core.info(`Testing Docker Image: ${inputs.image}`);
@@ -25796,8 +25792,8 @@ async function run() {
         for (const [key, value] of Object.entries(inputs.minimalEnv)) {
             maybeMaskSecret(key, value);
         }
-        debug(`Minimal env keys: ${Object.keys(inputs.minimalEnv).join(",") || "(none)"}`);
-        debug(`Mount docker socket: ${inputs.mountDockerSocket}`);
+        logger.verboseInfo(`Minimal env keys: ${Object.keys(inputs.minimalEnv).join(",") || "(none)"}`);
+        logger.verboseInfo(`Mount docker socket: ${inputs.mountDockerSocket}`);
         core.info("Step 1: Extracting healthcheck from image...");
         const healthcheckCmd = await (0, docker_1.extractHealthcheck)(inputs.image);
         if (healthcheckCmd) {
@@ -25839,7 +25835,7 @@ async function run() {
             : await (0, docker_1.discoverServices)(containerId);
         servicesDetected = services.allServices;
         if (inputs.skipS6Check) {
-            core.info("  Skipping s6 discovery (skipS6Check=true)");
+            core.info("  Skipping s6 discovery (skip-s6-check=true)");
         }
         else if (services.allServices.length > 0) {
             core.info(`  Found ${services.allServices.length} service(s): ${services.allServices.join(" ")}`);
@@ -25877,7 +25873,7 @@ async function run() {
             core.info("  ✓ All required services are running");
         }
         else if (inputs.skipS6Check) {
-            core.info("  Skipping s6 service check (skipS6Check=true)");
+            core.info("  Skipping s6 service check (skip-s6-check=true)");
         }
         else {
             core.info("  Skipping s6 service check (no required services specified)");
@@ -25891,8 +25887,8 @@ async function run() {
         (0, logs_1.saveLogs)(latestLogs);
         if (!logCheck.ok) {
             const preview = logCheck.matchedLines.slice(0, 20).join("\n");
-            debug(`Matched patterns: ${logCheck.matchedPatterns.join(", ")}`);
-            debug(`Matched lines (first 20):\n${preview}`);
+            logger.verboseInfo(`Matched patterns: ${logCheck.matchedPatterns.join(", ")}`);
+            logger.verboseInfo(`Matched lines (first 20):\n${preview}`);
             throw new Error("Errors detected in logs");
         }
         core.info("Step 7: Verifying healthcheck...");
@@ -25901,7 +25897,7 @@ async function run() {
             core.info("  ✓ Healthcheck passed");
         }
         else if (inputs.skipHealthcheck) {
-            core.info("  Skipping healthcheck verification (skipHealthcheck=true)");
+            core.info("  Skipping healthcheck verification (skip-healthcheck=true)");
         }
         else {
             core.info("  No healthcheck to verify (container is running)");
@@ -25910,14 +25906,14 @@ async function run() {
         core.info("✓ All tests passed!");
         core.info("==========================================");
         core.setOutput("status", "success");
-        core.setOutput("healthcheckDetected", String(healthcheckDetected));
-        core.setOutput("servicesDetected", JSON.stringify(servicesDetected));
+        core.setOutput("healthcheck-detected", String(healthcheckDetected));
+        core.setOutput("services-detected", JSON.stringify(servicesDetected));
     }
     catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error";
         core.setOutput("status", "failure");
-        core.setOutput("healthcheckDetected", String(healthcheckDetected));
-        core.setOutput("servicesDetected", JSON.stringify(servicesDetected));
+        core.setOutput("healthcheck-detected", String(healthcheckDetected));
+        core.setOutput("services-detected", JSON.stringify(servicesDetected));
         if (containerId) {
             latestLogs = latestLogs || (await (0, logs_1.getContainerLogs)(containerId));
             core.setOutput("logs", latestLogs);
@@ -26450,6 +26446,88 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.sleep = void 0;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 exports.sleep = sleep;
+
+
+/***/ }),
+
+/***/ 6999:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.Logger = void 0;
+const core = __importStar(__nccwpck_require__(7484));
+class Logger {
+    verbose;
+    debugMode;
+    constructor(verbose = false, debugMode = false) {
+        this.verbose = verbose || debugMode;
+        this.debugMode = debugMode;
+    }
+    info(message) {
+        core.info(message);
+    }
+    warning(message) {
+        core.warning(message);
+    }
+    error(message) {
+        core.error(message);
+    }
+    verboseInfo(message) {
+        if (this.verbose) {
+            core.info(message);
+        }
+    }
+    debug(message) {
+        if (this.debugMode) {
+            core.info(`[DEBUG] ${message}`);
+        }
+        else {
+            core.debug(message);
+        }
+    }
+    isVerbose() {
+        return this.verbose;
+    }
+    isDebug() {
+        return this.debugMode;
+    }
+}
+exports.Logger = Logger;
 
 
 /***/ }),
