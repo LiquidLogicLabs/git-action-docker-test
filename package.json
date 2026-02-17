@@ -8,7 +8,7 @@
     "prepare": "husky install",
     "build": "tsc && ncc build src/index.ts -o dist --source-map",
     "package": "npm run build",
-    "lint": "eslint \"src/**/*.ts\" \"__tests__/**/*.ts\" --no-warn-ignored",
+    "lint": "eslint \"src/**/*.ts\" \"__tests__/**/*.ts\"",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",

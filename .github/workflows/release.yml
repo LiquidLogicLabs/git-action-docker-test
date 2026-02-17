@@ -3,39 +3,64 @@ name: Release
 on:
   push:
     tags:
-      - "v*.*.*"
-  workflow_dispatch:
+      - "v*.*.*"  # Semver tags only
+  workflow_dispatch:  # Allow manual triggering
     inputs:
       tag:
-        description: SemVer tag to release (e.g., v1.2.3)
+        description: 'Tag to release (e.g., v1.0.0)'
         required: true
+        type: string
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.inputs.tag || github.ref }}
+  # Same group for same release whether triggered by push (tag) or workflow_dispatch (inputs.tag)
+  group: ${{ github.workflow || 'Release' }}-${{ github.event.inputs.tag || github.ref_name || github.ref || github.run_id }}
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: read
 
 jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
+  e2e-tests:
+    needs: ci
+    uses: ./.github/workflows/e2e-tests.yml
+    secrets: inherit
+
   release:
+    needs: [ci, e2e-tests]  # REQUIRED: CI and E2E tests must pass before release
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    env:
+      NPM_REGISTRY_TOKEN: ${{ secrets.NPM_REGISTRY_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-          ref: ${{ inputs.tag || github.ref }}
-      - uses: actions/setup-node@v4
+          fetch-depth: 0  # Full history for changelog generation
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Parse and validate version tag
+        id: version
+        uses: LiquidLogicLabs/git-tag-validate-version-action@v2
+        with:
+          tag: ${{ github.event.inputs.tag || github.ref_name }}
+          version-type: 'auto'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: npm
-      - run: npm ci
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run package
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and package action
+        run: npm run package
+
       - name: Verify packaged output is committed
         run: |
           # Only require the runtime bundle (index.js, index.js.map) to match; .d.ts.map can differ (paths)
@@ -45,36 +70,46 @@ jobs:
             exit 1
           fi
           echo "Runtime bundle (dist/index.js, dist/index.js.map) is committed."
-      - name: Create GitHub release
+
+      - name: Generate release notes
+        id: release_notes
+        uses: mikepenz/release-changelog-builder-action@v6
+        with:
+          mode: "HYBRID"
+          configurationJson: |
+            {
+              "template": "#{{CHANGELOG}}\n\n<details>\n<summary>Pull Requests</summary>\n\n#{{PR_LIST}}\n</details>\n\n---\n\n### Usage\n\n```yaml\n- uses: LiquidLogicLabs/git-action-docker-test@${{ github.ref_name }}\n```"
+            }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="${{ inputs.tag || github.ref_name }}"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists"
-          else
-            gh release create "$TAG" --generate-notes
-          fi
-      - name: Update floating tags
+
+      - name: Create/Update Major, Minor, and Latest Version Tags
+        if: steps.version.outputs.has-prerelease != 'true' && steps.version.outputs.is-valid == 'true'
+        uses: LiquidLogicLabs/git-floating-version-tags-action@v2
+        with:
+          tag: ${{ github.event.inputs.tag || github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: LiquidLogicLabs/git-action-release@v2
+        with:
+          tag: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Release ${{ steps.version.outputs.version }}
+          body: ${{ steps.release_notes.outputs.changelog }}
+          draft: false
+          prerelease: ${{ steps.version.outputs.has-prerelease == 'true' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release Summary
         run: |
-          TAG="${{ inputs.tag || github.ref_name }}"
-          if [[ "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-            MAJOR="v${BASH_REMATCH[1]}"
-            MINOR="v${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
-            git tag -f "$MAJOR" "$TAG"
-            git tag -f "$MINOR" "$TAG"
-            git push -f origin "$MAJOR" "$MINOR"
+          echo "## 🎉 Release Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **GitHub Release**: [View Release](https://github.com/${{ github.repository }}/releases/tag/${{ github.event.inputs.tag || github.ref_name }})" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.version.outputs.has-prerelease }}" == "true" ]; then
+            echo "- **Status**: ⚠️ Pre-release (for testing)" >> $GITHUB_STEP_SUMMARY
           else
-            echo "Tag $TAG does not match vX.Y.Z; skipping floating tags."
+            echo "- **Status**: ✅ Stable release" >> $GITHUB_STEP_SUMMARY
+            echo "- **Version Tags Created**: \`@v${{ steps.version.outputs.major }}\`, \`@v${{ steps.version.outputs.major }}.${{ steps.version.outputs.minor }}\`, \`@latest\`, \`@${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
           fi
-      - name: Job summary
-        run: |
-          TAG="${{ inputs.tag || github.ref_name }}"
-          {
-            echo "## Release"
-            echo ""
-            echo "- Tag: $TAG"
-            echo "- Commit: $GITHUB_SHA"
-          } >> "$GITHUB_STEP_SUMMARY"
