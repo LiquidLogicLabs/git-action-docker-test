@@ -31,3 +31,6 @@ _bmad-output/
 # Temporary
 .tmp/
 .tmp
+
+# Devcontainer secrets — copy of .devcontainer/.devcontainer-secrets.sample with real values
+.devcontainer-secrets
