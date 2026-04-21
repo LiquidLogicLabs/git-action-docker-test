@@ -1,6 +1,6 @@
 {
   "name": "docker-test-action",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "private": true,
   "description": "Generic Docker image testing with healthcheck and s6 service validation",
   "main": "dist/index.js",
