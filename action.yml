@@ -51,7 +51,7 @@ outputs:
   services-detected:
     description: List of s6 services detected (JSON array)
 runs:
-  using: node20
+  using: 'node24'
   main: dist/index.js
 branding:
   icon: "check-circle"
