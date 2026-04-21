@@ -40,7 +40,7 @@ jobs:
     name: ${{ matrix.name }}
     # Run action from committed dist only (no build). Ensures E2E fails if dist is unbundled.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Pull fixture image
         run: docker pull "${{ matrix.image }}"
