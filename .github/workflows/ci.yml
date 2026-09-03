@@ -25,12 +25,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: "24"
           cache: npm
       - run: npm ci
       - run: npm run lint
+
+      - name: Check formatting
+        # Non-blocking until Phase 6 reformats. Do not make this blocking here.
+        continue-on-error: true
+        run: npm run format:check
+
+      - name: Lint workflows
+        # Scoped to ci.yml in Phase 0; Phase 1 fixes release.yml/e2e-tests.yml
+        # shellcheck findings and removes the scoping.
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color .github/workflows/ci.yml
+
+      - name: Scan for secrets
+        run: |
+          # Fail loudly if the mount is not a git repo — gitleaks exits 0 in that case.
+          docker run --rm -v "$PWD:/repo" --entrypoint /bin/sh zricethezav/gitleaks:v8.30.1 \
+            -c 'test -e /repo/.git' || { echo "::error::gitleaks mount is not a git repo"; exit 1; }
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 \
+            detect --source=/repo --no-banner --redact
 
   typecheck:
     runs-on: ubuntu-latest
