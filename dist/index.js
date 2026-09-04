@@ -32550,11 +32550,16 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.getInputs = getInputs;
 const core = __importStar(__nccwpck_require__(7484));
 const inputs_1 = __nccwpck_require__(1662);
+const argv_1 = __nccwpck_require__(9253);
 function getInputs() {
     const image = core.getInput('image');
     if (!image) {
         throw new Error("Input 'image' is required");
     }
+    // Argument-injection guard, at the entry point. `image` is passed positionally to
+    // `docker run` and `docker inspect`; docker's own option parser reads a leading "-" as
+    // an option whatever the argv array does about the shell.
+    (0, argv_1.assertNotOptionLike)(image, 'image name');
     const verboseInput = (0, inputs_1.parseBoolean)(core.getInput('verbose'), false, 'verbose');
     const envStepDebug = (process.env.ACTIONS_STEP_DEBUG || '').toLowerCase();
     const stepDebugEnabled = (typeof core.isDebug === 'function' && core.isDebug()) || envStepDebug === 'true' || envStepDebug === '1';
@@ -32568,11 +32573,22 @@ function getInputs() {
     const requiredServices = core.getInput('required-services');
     const errorPatterns = (0, inputs_1.parseJsonArray)(core.getInput('error-patterns'), 'error-patterns');
     const mountDockerSocket = (0, inputs_1.parseBoolean)(core.getInput('mount-docker-socket'), false, 'mount-docker-socket');
+    // required-services is split on "," and each element becomes an argv element AND is
+    // interpolated into checkService()'s `sh -c` fallback. minimal-env keys become
+    // `-e <key>=<value>`. Both are guarded here as well as at their use sites.
+    for (const service of requiredServices.split(',').map((s) => s.trim()).filter(Boolean)) {
+        (0, argv_1.assertNotOptionLike)(service, 'service name');
+        (0, argv_1.assertShellSafe)(service, 'service name');
+    }
+    const minimalEnv = (0, inputs_1.parseJsonObject)(minimalEnvInput, 'minimal-env');
+    for (const key of Object.keys(minimalEnv)) {
+        (0, argv_1.assertNotOptionLike)(key, 'environment variable name');
+    }
     return {
         image,
         timeout,
         startupTimeout,
-        minimalEnv: (0, inputs_1.parseJsonObject)(minimalEnvInput, 'minimal-env'),
+        minimalEnv,
         skipHealthcheck,
         skipS6Check,
         requiredServices,
@@ -32801,6 +32817,58 @@ if (process.env.NODE_ENV !== "test") {
 
 /***/ }),
 
+/***/ 9253:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+/**
+ * Guards for values that reach an spawned program's argv.
+ *
+ * Passing an argv array stops the SHELL from interpreting a value. It does NOT stop the
+ * spawned program's own option parser: a leading "-" is read as an option wherever it
+ * appears in argv. The proven form of this bug is git, where `git push --receive-pack=<cmd>`
+ * executes <cmd>; `docker` has the same shape, so a hostile value takes an OPTION slot
+ * instead of the value slot the caller intended.
+ */
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.assertNotOptionLike = assertNotOptionLike;
+exports.assertShellSafe = assertShellSafe;
+/**
+ * Reject a value that `docker` would read as an option rather than as a value.
+ *
+ * Image names, service names and environment variable names never legitimately begin with
+ * "-", so this costs nothing.
+ */
+function assertNotOptionLike(value, label) {
+    if (value !== undefined && value.startsWith("-")) {
+        throw new Error(`Refusing to pass a ${label} beginning with "-" to docker: ${JSON.stringify(value)}. ` +
+            "docker would read it as an option rather than as a value.");
+    }
+}
+/**
+ * Reject a value that would break out of a `sh -c` script it is interpolated into.
+ *
+ * Stricter than assertNotOptionLike and NOT a superset of it -- callers that interpolate
+ * need both. checkService() builds a shell script by string concatenation, so a service
+ * name containing ";", "|", "$", backticks, "&" or a newline executes attacker-chosen
+ * commands rather than merely occupying the wrong argv slot.
+ *
+ * s6 service names are directory basenames, so an allowlist of the characters a basename
+ * legitimately uses is the right shape here: anything outside it is refused rather than
+ * escaped, because escaping is the thing that keeps going wrong.
+ */
+const SHELL_SAFE = /^[A-Za-z0-9._@+-][A-Za-z0-9._@+/-]*$/;
+function assertShellSafe(value, label) {
+    if (!SHELL_SAFE.test(value)) {
+        throw new Error(`Refusing to interpolate a ${label} containing characters a shell would act on: ` +
+            `${JSON.stringify(value)}. Allowed: letters, digits and ". _ @ + - /".`);
+    }
+}
+
+
+/***/ }),
+
 /***/ 935:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -32848,6 +32916,7 @@ exports.checkHealthcheck = checkHealthcheck;
 exports.buildEnvArgs = buildEnvArgs;
 const core = __importStar(__nccwpck_require__(7484));
 const exec_1 = __nccwpck_require__(766);
+const argv_1 = __nccwpck_require__(9253);
 const utils_1 = __nccwpck_require__(8974);
 function parseLines(result) {
     if (result.exitCode !== 0)
@@ -32861,6 +32930,7 @@ function parseLines(result) {
 }
 // Return the healthcheck command string if present.
 async function extractHealthcheck(image) {
+    (0, argv_1.assertNotOptionLike)(image, "image name");
     const result = await (0, exec_1.execCommand)("docker", [
         "inspect",
         "--format",
@@ -32935,6 +33005,11 @@ async function waitForContainer(containerId, timeoutSeconds, deadlineMs) {
 }
 // Query s6 service status output (first line).
 async function checkService(containerId, service) {
+    // The service name reaches docker's argv AND, in the shellFallback below, is
+    // interpolated into a `sh -c` script. Both guards are needed: assertShellSafe allows a
+    // leading "-" (legal in a basename) and assertNotOptionLike allows everything else.
+    (0, argv_1.assertNotOptionLike)(service, "service name");
+    (0, argv_1.assertShellSafe)(service, "service name");
     // Avoid assuming a shell exists in the container. Try direct exec first.
     const primary = await (0, exec_1.execCommand)("docker", ["exec", containerId, "s6-svstat", `/run/s6/services/${service}`], true, true);
     const primaryLines = parseLines(primary);
@@ -32991,6 +33066,7 @@ async function checkHealthcheck(containerId, timeoutSeconds, deadlineMs) {
 function buildEnvArgs(env) {
     const args = [];
     for (const [key, value] of Object.entries(env)) {
+        (0, argv_1.assertNotOptionLike)(key, "environment variable name");
         args.push("-e", `${key}=${value}`);
     }
     return args;

@@ -1,5 +1,6 @@
 import * as core from "@actions/core";
 import { execCommand } from "./exec";
+import { assertNotOptionLike, assertShellSafe } from "./argv";
 import { ServiceDiscovery } from "./types";
 import { sleep } from "./utils";
 
@@ -15,6 +16,7 @@ function parseLines(result: { stdout: string; exitCode: number }): string[] {
 
 // Return the healthcheck command string if present.
 export async function extractHealthcheck(image: string): Promise<string> {
+  assertNotOptionLike(image, "image name");
   const result = await execCommand(
     "docker",
     [
@@ -116,6 +118,11 @@ export async function waitForContainer(
 
 // Query s6 service status output (first line).
 export async function checkService(containerId: string, service: string): Promise<string> {
+  // The service name reaches docker's argv AND, in the shellFallback below, is
+  // interpolated into a `sh -c` script. Both guards are needed: assertShellSafe allows a
+  // leading "-" (legal in a basename) and assertNotOptionLike allows everything else.
+  assertNotOptionLike(service, "service name");
+  assertShellSafe(service, "service name");
   // Avoid assuming a shell exists in the container. Try direct exec first.
   const primary = await execCommand(
     "docker",
@@ -193,6 +200,7 @@ export async function checkHealthcheck(
 export function buildEnvArgs(env: Record<string, string>): string[] {
   const args: string[] = [];
   for (const [key, value] of Object.entries(env)) {
+    assertNotOptionLike(key, "environment variable name");
     args.push("-e", `${key}=${value}`);
   }
   return args;
