@@ -40,14 +40,19 @@ jobs:
     name: ${{ matrix.name }}
     # Run action from committed dist only (no build). Ensures E2E fails if dist is unbundled.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          # No step in this job pushes; the credential is not needed.
+          persist-credentials: false
 
       - name: Pull fixture image
-        run: docker pull "${{ matrix.image }}"
+        env:
+          Z_MATRIX_IMAGE: ${{ matrix.image }}
+        run: docker pull "${Z_MATRIX_IMAGE}"
 
       - name: Run action
         id: run_action
-        uses: ./
+        uses: ./  # zizmor: ignore[self-repository] — local ACTION reference under test, not a reusable-workflow call; $/ does not apply
         with:
           image: ${{ matrix.image }}
           timeout: ${{ matrix.timeout }}
@@ -63,8 +68,9 @@ jobs:
           STATUS: ${{ steps.run_action.outputs.status }}
           EXPECT_HEALTHCHECK_DETECTED: ${{ matrix.expectHealthcheckDetected }}
           EXPECT_SERVICES_MIN: ${{ matrix.expectServicesMin }}
+          Z_MATRIX_IMAGE: ${{ matrix.image }}
         run: |
-          echo "image=${{ matrix.image }}"
+          echo "image=${Z_MATRIX_IMAGE}"
           echo "status=${STATUS}"
           echo "healthcheckDetected=${HEALTHCHECK_DETECTED}"
           echo "servicesDetected=${SERVICES_DETECTED_JSON}"
