@@ -1,4 +1,4 @@
-# Test Docker Image Action
+# Git Docker Image Test
 
 Generic Docker image testing: starts a container, waits for it to be running, scans logs for common error patterns, and can validate Docker healthchecks and s6-overlay services.
 
