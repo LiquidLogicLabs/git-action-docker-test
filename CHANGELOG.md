@@ -1,3 +1,7 @@
+## [2.0.6](https://github.com/LiquidLogicLabs/git-action-docker-test/compare/v2.0.5...v2.0.6) (2026-09-08)
+
+
+
 ## [2.0.5](https://github.com/LiquidLogicLabs/git-action-docker-test/compare/v2.0.4...v2.0.5) (2026-09-04)
 
 
