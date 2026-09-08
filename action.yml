@@ -1,4 +1,4 @@
-name: Test Docker Image
+name: 'Git Docker Image Test'
 description: Generic Docker image testing with healthcheck and s6 service validation
 author: LiquidLogicLabs
 inputs:
