@@ -23,14 +23,14 @@
     "release:patch": "npm version patch -m \"chore(release): %s\"",
     "release:minor": "npm version minor -m \"chore(release): %s\"",
     "release:major": "npm version major -m \"chore(release): %s\"",
-    "test:act": "act --container-options \"--user $(id -u):$(id -g)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/ci.yml",
-    "test:act:verbose": "act --container-options \"--user $(id -u):$(id -g)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/ci.yml -v",
-    "test:act:ci:push": "act --container-options \"--user $(id -u):$(id -g)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/ci.yml --eventpath .github/workflows/.act/event-push.json",
-    "test:act:ci:lint": "act --container-options \"--user $(id -u):$(id -g)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/ci.yml -j lint",
-    "test:act:ci:test": "act --container-options \"--user $(id -u):$(id -g)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/ci.yml -j test",
-    "test:act:e2e": "act workflow_dispatch --container-options \"--user $(id -u):$(id -g) --group-add $(stat -c %g /var/run/docker.sock)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/e2e-tests.yml",
-    "test:act:release": "act --container-options \"--user $(id -u):$(id -g)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/release.yml --eventpath .github/workflows/.act/event-release.json",
-    "test:act:release:dispatch": "act --container-options \"--user $(id -u):$(id -g)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/release.yml --eventpath .github/workflows/.act/event-workflow_dispatch.json"
+    "test:act": "act --container-options \"--user $(id -u):$(id -g) --group-add $(stat -c %g /var/run/docker.sock)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/ci.yml",
+    "test:act:verbose": "act --container-options \"--user $(id -u):$(id -g) --group-add $(stat -c %g /var/run/docker.sock)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/ci.yml -v",
+    "test:act:ci:push": "act --container-options \"--user $(id -u):$(id -g) --group-add $(stat -c %g /var/run/docker.sock)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/ci.yml --eventpath .github/workflows/.act/event-push.json",
+    "test:act:ci:lint": "act --container-options \"--user $(id -u):$(id -g) --group-add $(stat -c %g /var/run/docker.sock)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/ci.yml -j lint",
+    "test:act:ci:test": "act --container-options \"--user $(id -u):$(id -g) --group-add $(stat -c %g /var/run/docker.sock)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/ci.yml -j test",
+    "test:act:e2e": "act workflow_dispatch --container-options \"--user $(id -u):$(id -g) --group-add $(stat -c %g /var/run/docker.sock) --group-add $(stat -c %g /var/run/docker.sock)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/e2e-tests.yml",
+    "test:act:release": "act --container-options \"--user $(id -u):$(id -g) --group-add $(stat -c %g /var/run/docker.sock)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/release.yml --eventpath .github/workflows/.act/event-release.json",
+    "test:act:release:dispatch": "act --container-options \"--user $(id -u):$(id -g) --group-add $(stat -c %g /var/run/docker.sock)\" --env-file .act.env --var-file .act.vars --secret-file .act.secrets -W .github/workflows/release.yml --eventpath .github/workflows/.act/event-workflow_dispatch.json"
   },
   "dependencies": {
     "@actions/core": "^2.0.3",
