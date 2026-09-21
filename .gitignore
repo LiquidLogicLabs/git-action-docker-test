@@ -25,7 +25,6 @@ coverage/
 .act.secrets
 
 # Local automation/framework artifacts
-_bmad/
 _bmad-output/
 
 # Temporary
