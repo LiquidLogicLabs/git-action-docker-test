@@ -197,6 +197,12 @@ jobs:
           package-manager-cache: false
       - run: npm ci
       - run: npm test
+      - name: Coverage thresholds
+        # Runs the whole suite once with coverage and fails if it drops below the
+        # ratchet in jest.config. The unit and integration steps above each cover only
+        # part of the tree, so neither alone is a meaningful coverage measurement --
+        # that is why this is a separate step rather than a flag on one of them.
+        run: npm run test:coverage
 
   package:
     runs-on: ubuntu-latest
